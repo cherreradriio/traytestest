@@ -1,0 +1,1276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parametric Tray & Lid Generator</title>
+<style>
+  :root { color-scheme: light; --ink:#1f2933; --muted:#65717d; --line:#dce2e7; --blue:#1769aa; --pale:#f4f7f9; }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--ink); background:#eef2f5; font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1100px; margin:34px auto; padding:0 20px; }
+  header { margin-bottom:22px; }
+  h1 { font-size:clamp(25px,4vw,36px); line-height:1.15; margin:0 0 8px; }
+  h2 { font-size:18px; margin:0 0 15px; }
+  h2.subheading { margin-top:22px; margin-bottom:5px; }
+  p { color:var(--muted); margin:0; }
+  .layout { display:grid; grid-template-columns:minmax(300px,420px) minmax(320px,1fr); gap:20px; align-items:start; }
+  section { background:white; border:1px solid var(--line); border-radius:12px; padding:22px; box-shadow:0 4px 16px #2233440a; }
+  .fields { display:grid; grid-template-columns:1fr 1fr; gap:13px 15px; }
+  label { display:grid; gap:5px; font-size:13px; font-weight:650; }
+  label[hidden] { display:none; }
+  input,select { width:100%; min-height:40px; padding:8px 10px; border:1px solid #c8d0d7; border-radius:7px; color:var(--ink); background:white; font:inherit; }
+  input:focus,select:focus { outline:2px solid #8cc4f0; border-color:var(--blue); }
+  .full { grid-column:1/-1; }
+  .hint { margin-top:14px; padding:11px 12px; background:var(--pale); border-radius:7px; font-size:12px; color:var(--muted); }
+  .preview { height:380px; background:linear-gradient(145deg,#f9fbfc,#edf2f5); border:1px solid var(--line); border-radius:9px; overflow:hidden; }
+  #preview-canvas { display:block; width:100%; height:100%; cursor:grab; touch-action:none; }
+  #preview-canvas:active { cursor:grabbing; }
+  .preview-controls { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .preview-controls button { padding:8px 11px; }
+  .preview-controls span { margin-left:auto; color:var(--muted); font-size:12px; }
+  .preview-controls .mode-label { display:flex; grid-template-columns:none; align-items:center; gap:7px; font-size:13px; }
+  .preview-controls select { min-height:36px; width:auto; padding:6px 9px; }
+  .section-note { margin:0 0 12px; font-size:12px; }
+  .animation-controls { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:10px; }
+  .animation-controls input[type="range"] { padding:0; accent-color:var(--blue); }
+  .check { display:flex; align-items:center; gap:9px; }
+  .check input { width:17px; min-height:17px; margin:0; }
+  .actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:15px; }
+  button { border:0; border-radius:7px; padding:10px 15px; background:var(--blue); color:white; font:inherit; font-weight:650; font-size:14px; cursor:pointer; }
+  button.secondary { background:#e8eef3; color:var(--ink); }
+  button:hover { filter:brightness(.95); }
+  button:focus-visible { outline:3px solid #8cc4f0; outline-offset:2px; }
+  .status { min-height:22px; margin-top:10px; font-size:13px; color:var(--muted); }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px; font-size:13px; }
+  .stats div { background:var(--pale); padding:9px 10px; border-radius:7px; }
+  .stats strong { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .stats .full-stat { grid-column:1/-1; }
+  .group { border-top:1px solid var(--line); padding:12px 0 6px; }
+  .group:first-of-type { border-top:0; padding-top:0; }
+  .group > summary { cursor:pointer; font-weight:700; font-size:15px; margin-bottom:12px; }
+  .group .section-note { margin-bottom:12px; }
+  .preview-controls input[type="range"] { width:130px; min-height:0; padding:0; accent-color:var(--blue); }
+  .preview-controls .mode-label input[type="checkbox"] { width:16px; min-height:16px; }
+  @media(max-width:760px) { main { margin:20px auto; } .layout { grid-template-columns:1fr; } .preview { height:300px; } .preview-controls span { flex-basis:100%; margin-left:0; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Parametric Tray & Lid Generator</h1>
+    <p>Set tray dimensions, choose a lid style, preview the fit, and export separate STL parts for printing.</p>
+  </header>
+  <div class="layout">
+    <section aria-labelledby="settings-heading">
+      <h2 id="settings-heading">Tray & lid</h2>
+      <details class="group" open><summary>Size, walls & fit</summary>
+      <div class="fields">
+        <label>Inside length <input id="length" type="number" min="20" max="300" step="1" value="120"></label>
+        <label>Inside width <input id="width" type="number" min="20" max="300" step="1" value="80"></label>
+        <label>Inside depth <input id="height" type="number" min="2" max="200" step="1" value="35"></label>
+        <label>Wall thickness <input id="wall" type="number" min="1" max="12" step="0.2" value="2"></label>
+        <label>Bottom thickness <input id="bottom" type="number" min="1" max="10" step="0.2" value="2"></label>
+        <label class="full">Fit preset
+          <select id="fit-preset">
+            <option value="easy">Easy removal · 0.55 mm/side</option>
+            <option value="balanced" selected>Balanced · 0.30 mm/side</option>
+            <option value="firm">Firm hold · 0.15 mm/side</option>
+            <option value="custom">Custom clearance</option>
+          </select>
+        </label>
+        <label>Fit clearance per side <input id="clearance" type="number" min="0.1" max="1.5" step="0.05" value="0.3"></label>
+        <label>Corner shape
+          <select id="corner-style"><option value="round">Rounded</option><option value="chamfer">Chamfered</option><option value="square">Square</option></select>
+        </label>
+        <label>Corner radius / bevel <input id="corner-size" type="number" min="0" max="20" step="0.5" value="5"></label>
+      </div></details>
+      <details class="group" open><summary>Lid style & options</summary>
+      <div class="fields">
+        <label class="full">Lid style
+          <select id="style">
+            <option value="plug">Plug / friction fit</option>
+            <option value="snap">Flex-fit overcap</option>
+            <option value="overcap">Lift-off overcap</option>
+            <option value="flat">Flat overlay</option>
+            <option value="slide">Sliding panel</option>
+          </select>
+        </label>
+        <label>Lid thickness <input id="lidThickness" type="number" min="1" max="8" step="0.2" value="2"></label>
+        <label id="feature-label">Plug depth <input id="feature" type="number" min="2" max="20" step="1" value="8"></label>
+        <label id="flat-overhang-label" hidden>Edge overhang beyond tray (0 = flush) <input id="flat-overhang" type="number" min="0" max="5" step="0.1" value="0.5"></label>
+        <label id="flex-wall-label" class="full" hidden>Flex skirt thickness <input id="flex-wall" type="number" min="0.6" max="2.4" step="0.1" value="0.8"></label>
+        <label id="relief-label" class="full">Lid compliance slits
+          <select id="lid-slits"><option value="none">None</option><option value="corners">Corners</option><option value="sides">Sides</option><option value="both">Sides + corners</option></select>
+        </label>
+        <label id="tray-slit-label" class="check full"><input id="tray-slits" type="checkbox"> Add tray corner slits (not available for snap-fit ridge trays)</label>
+        <label id="print-flip-label" class="check full"><input id="print-flip" type="checkbox" checked> Export lid in print orientation (flipped, flat face on the bed)</label>
+        <label id="label-recess-label" class="check full"><input id="label-recess" type="checkbox"> Add label recess on lid top (0.6 mm deep)</label>
+        <label id="label-width-label" hidden>Label width <input id="label-width" type="number" min="10" max="200" step="1" value="40"></label>
+        <label id="label-height-label" hidden>Label height <input id="label-height" type="number" min="6" max="120" step="1" value="15"></label>
+      </div></details>
+      <details class="group" open><summary>Magnets & stacking</summary>
+      <div class="fields">
+        <label id="magnet-label" class="check full"><input id="magnetic" type="checkbox"> Add replaceable magnets for lid + double-sided stacking</label>
+        <label id="magnet-pos-label" hidden>Magnet position <select id="magnet-pos"><option value="sides">Sides (middle of each wall)</option><option value="corners">Corners (needs thicker walls)</option></select></label>
+        <label id="mag-tray-top-label" class="check full" hidden><input id="mag-tray-top" type="checkbox" checked> Tray top (meets lid bottom)</label>
+        <label id="mag-lid-bottom-label" class="check full" hidden><input id="mag-lid-bottom" type="checkbox" checked> Lid bottom (meets tray top)</label>
+        <label id="mag-tray-bottom-label" class="check full" hidden><input id="mag-tray-bottom" type="checkbox" checked> Tray bottom (stacking, meets lid top)</label>
+        <label id="mag-lid-top-label" class="check full" hidden><input id="mag-lid-top" type="checkbox" checked> Lid top (stacking, meets tray bottom)</label>
+        <label id="magnet-diameter-label" hidden>Disc magnet diameter <input id="magnet-diameter" type="number" min="2" max="12" step="0.1" value="6"></label>
+        <label id="magnet-thickness-label" hidden>Disc magnet thickness <input id="magnet-thickness" type="number" min="1" max="5" step="0.1" value="2"></label>
+        <label id="magnet-clearance-label" hidden>Pocket clearance <input id="magnet-clearance" type="number" min="0" max="0.6" step="0.05" value="0.2"></label>
+        <p id="magnet-note" class="section-note full" hidden>Square-sided, open-face pockets let you pry magnets out for replacement. Use removable adhesive if needed and mark each magnet's polarity before gluing: mating faces (tray top/lid bottom, tray bottom/lid top) need opposite poles, and every pocket on a face should face the same way. Corner magnets grip best against lid lift but need thicker walls. The 6 × 2 mm default needs thicker walls, floor, and lid than the basic tray. <strong id="magnet-fit"></strong></p>
+        <label class="check full"><input id="feet" type="checkbox"> Add low-profile corner feet</label>
+        <label class="check full"><input id="stack-feet" type="checkbox"> Stacking feet under the tray (bottom)</label>
+        <label class="check full"><input id="stack-rim" type="checkbox"> Guide rim (top)</label>
+        <p class="section-note full">Use either or both: matching low feet under the tray and a raised rim on the lid help keep stacked trays aligned. Stacking feet replace the separate corner feet.</p>
+      </div></details>
+      <div class="hint" id="hint">Plug lid: a shallow insert fits inside the tray opening. Increase clearance if your printer tends to run tight.</div>
+      <details class="group" open><summary>Compartments</summary>
+      <p class="section-note">Evenly spaced dividers by default. Optionally enter ratios such as 1,2,1 to size compartments unevenly (this overrides the row or column count).</p>
+      <div class="fields partition-fields">
+        <label>Rows <input id="rows" type="number" min="1" max="8" step="1" value="1"></label>
+        <label>Columns <input id="columns" type="number" min="1" max="8" step="1" value="1"></label>
+        <label>Row ratios <input id="row-ratios" type="text" placeholder="e.g. 1,2,1"></label>
+        <label>Column ratios <input id="column-ratios" type="text" placeholder="e.g. 2,1"></label>
+        <label>Divider thickness <input id="divider-thickness" type="number" min="0.8" max="8" step="0.2" value="2"></label>
+        <label>Divider fillet <input id="divider-fillet" type="number" min="0" max="5" step="0.5" value="1"></label>
+        <label class="full">Divider height <input id="divider-height" type="number" min="2" max="200" step="1" value="25"></label>
+      </div></details>
+    </section>
+    <section aria-labelledby="preview-heading">
+      <h2 id="preview-heading">Preview</h2>
+      <div class="preview"><canvas id="preview-canvas" aria-label="Interactive 3D preview of the assembled box tray and lid"></canvas></div>
+      <div class="preview-controls">
+        <label class="mode-label">Show
+          <select id="view-mode">
+            <option value="assembled">Tray + lid assembled</option>
+            <option value="exploded">Tray + separated lid</option>
+            <option value="tray">Tray only</option>
+            <option value="lid">Lid only</option>
+          </select>
+        </label>
+        <button id="reset-view" class="secondary">Reset view</button>
+        <button id="flip-view" class="secondary">View underside</button>
+        <span>Blue = tray · orange = lid · drag to rotate · scroll to zoom · flip view for underside details</span>
+      </div>
+      <div class="preview-controls">
+        <label class="mode-label">Cross-section
+          <select id="section-axis"><option value="off">Off</option><option value="y">Across width</option><option value="x">Along length</option><option value="z">Horizontal</option></select>
+        </label>
+        <label class="mode-label">Position <input id="section-pos" type="range" min="0" max="100" step="1" value="50"></label>
+        <label class="mode-label"><input id="section-flip" type="checkbox"> Flip cut side</label>
+        <span>Cut faces are drawn in red; use it to check grooves, tongues and magnet pockets.</span>
+      </div>
+      <h2 class="subheading">Assembly animation</h2>
+      <p class="section-note" id="animation-hint">Animate the lid moving into and out of its fitted position.</p>
+      <div class="animation-controls">
+        <button id="animate-assemble">Assemble</button>
+        <button id="animate-disassemble" class="secondary">Disassemble</button>
+        <label class="full">Assembly progress <input id="assembly-progress" type="range" min="0" max="100" step="1" value="100"></label>
+      </div>
+      <div id="magnet-animation" hidden>
+        <h2 class="subheading">Magnet animation</h2>
+        <p class="section-note">Shows 6 × 2 mm discs being pressed into the open-face pockets (silver = tray, red = lid, opposite poles facing). With magnets enabled, assembly also accelerates into the pull-in and disassembly resists at first.</p>
+        <div class="animation-controls">
+          <button id="magnet-insert">Insert magnets</button>
+          <button id="magnet-remove" class="secondary">Remove magnets</button>
+          <label class="full">Magnet insertion <input id="magnet-progress" type="range" min="0" max="100" step="1" value="100"></label>
+        </div>
+      </div>
+      <p class="hint" id="print-notes"></p>
+      <div class="stats">
+        <div><strong>Tray outer size</strong><span id="outer"></span></div>
+        <div><strong>Lid fit</strong><span id="fit"></span></div>
+        <div class="full-stat"><strong>Mesh check</strong><span id="mesh-check"></span></div>
+      </div>
+      <div class="actions">
+        <button id="base-download">Download tray STL</button>
+        <button id="lid-download" class="secondary">Download lid STL</button>
+        <button id="plate-download" class="secondary">Download print plate (both)</button>
+        <button id="test-download" class="secondary">Clearance test plate</button>
+        <button id="share-link" class="secondary">Copy settings link</button>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite"></div>
+      <p class="hint">The tray is open at the top by design; the lid closes it when assembled. Start with the balanced 0.30 mm-per-side preset, then tune for your printer and material. Choose tray-only, lid-only, or separated views to inspect each part, then flip the view to inspect undersides. Stack alignment adds feet under the tray and a locating rim on the lid. Parts download separately in millimetres. Check clearances and mesh unions in your slicer, then test-fit before a full print.</p>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const inputIds = ["length", "width", "height", "wall", "bottom", "clearance", "style", "lidThickness", "feature","flat-overhang","flex-wall",
+    "corner-style","corner-size","rows","columns","divider-thickness","divider-fillet","divider-height","feet","stack-feet","stack-rim","lid-slits","tray-slits","print-flip",
+    "magnetic","magnet-pos","mag-tray-top","mag-lid-bottom","mag-tray-bottom","mag-lid-top","magnet-diameter","magnet-thickness","magnet-clearance","label-recess","label-width","label-height","row-ratios","column-ratios"];
+  const persistIds=[...inputIds,"fit-preset"];
+  const sectionIds=["section-axis","section-pos","section-flip"];
+  const state = {};
+  const view = {azimuth:-0.65,elevation:0.72,zoom:1,exploded:false};
+  const animation = {progress:1,frame:0};
+  const magnet = {progress:1,frame:0};
+  const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+  const safe = (id, fallback, min, max) => {
+    const n = Number($(id).value);
+    return clamp(Number.isFinite(n) ? n : fallback, min, max);
+  };
+  function read() {
+    let warning="";
+    state.L = safe("length",120,20,300); state.W = safe("width",80,20,300);
+    state.H = safe("height",35,2,200); state.t = safe("wall",2,1,12);
+    state.b = safe("bottom",2,1,10); state.c = safe("clearance",.3,.1,1.5);
+    state.lt = safe("lidThickness",2,1,8); state.f = safe("feature",8,2,20); state.flatOverhang = safe("flat-overhang",.5,0,5);
+    state.flexWall=safe("flex-wall",.8,.6,2.4);
+    state.style = $("style").value;
+    const slitMode=$("lid-slits").value;
+    state.slitCorners=slitMode==="corners"||slitMode==="both";
+    state.slitSides=slitMode==="sides"||slitMode==="both";
+    state.compliant=slitMode!=="none"&&state.style!=="slide"&&state.style!=="flat";
+    state.traySlits=$("tray-slits").checked&&state.style!=="slide"&&state.style!=="snap";
+    state.printFlip=$("print-flip").checked;
+    state.magnetic=$("magnetic").checked;
+    state.magnetPos=$("magnet-pos").value;
+    state.magnetFaces={trayTop:$("mag-tray-top").checked,lidBottom:$("mag-lid-bottom").checked,trayBottom:$("mag-tray-bottom").checked,lidTop:$("mag-lid-top").checked};
+    if($("style").value==="slide") state.magnetFaces={trayTop:false,lidBottom:false,trayBottom:$("mag-tray-bottom").checked,lidTop:$("mag-lid-top").checked};
+    state.magnetDiameter=safe("magnet-diameter",6,2,12);
+    state.magnetThickness=safe("magnet-thickness",2,1,5);
+    state.magnetClearance=safe("magnet-clearance",.2,0,.6);
+    state.cornerStyle=$("corner-style").value;
+    state.cornerSize=safe("corner-size",5,0,Math.min(state.L,state.W)/2);
+    state.rows=Math.round(safe("rows",1,1,8)); state.columns=Math.round(safe("columns",1,1,8));
+    state.dividerThickness=safe("divider-thickness",2,.8,8);
+    state.dividerFillet=safe("divider-fillet",1,0,5);
+    state.dividerHeight=safe("divider-height",25,2,state.H);
+    state.feet=$("feet").checked;
+    state.stackFeet=$("stack-feet").checked;state.stackRim=$("stack-rim").checked;
+    const ratios=id=>{
+      const parts=$(id).value.split(/[\s,:;]+/).filter(Boolean).map(Number);
+      return parts.length>=2&&parts.length<=8&&parts.every(n=>Number.isFinite(n)&&n>0)?parts:null;
+    };
+    const fractions=(parts,count)=>{
+      if(!parts) return Array.from({length:count-1},(_,i)=>(i+1)/count);
+      const total=parts.reduce((a,b)=>a+b,0);let run=0;
+      return parts.slice(0,-1).map(n=>(run+=n)/total);
+    };
+    const rowParts=ratios("row-ratios"),colParts=ratios("column-ratios");
+    if(rowParts) state.rows=rowParts.length;
+    if(colParts) state.columns=colParts.length;
+    state.rowFracs=fractions(rowParts,state.rows);state.colFracs=fractions(colParts,state.columns);
+    state.labelOn=$("label-recess").checked;
+    state.labelW=safe("label-width",40,10,200);state.labelH=safe("label-height",15,6,120);
+    if (state.L <= 2*state.t || state.W <= 2*state.t) {
+      $("status").textContent = "Inside dimensions must be larger than the wall and bottom thicknesses.";
+      return false;
+    }
+    if(state.style==="snap"&&state.f<state.lt+2) {
+      $("status").textContent = "Flex-fit skirt depth must be at least 2 mm greater than lid thickness for the retention ridge.";
+      return false;
+    }
+    if(state.style==="plug"&&state.H<4) {
+      $("status").textContent = "The plug lid needs an inside depth of at least 4 mm so the insert has a 2 mm engagement wall.";
+      return false;
+    }
+    if(state.style==="snap"&&state.H<state.lt+2.5) {
+      $("status").textContent = `The flex-fit overcap needs an inside depth of at least ${(state.lt+2.5).toFixed(1)} mm (lid thickness + 2.5) for its retention ridge.`;
+      return false;
+    }
+    if(state.style==="overcap"&&state.H<state.lt+1) {
+      $("status").textContent = `The lift-off overcap needs an inside depth of at least ${(state.lt+1).toFixed(1)} mm (lid thickness + 1) so its skirt has room.`;
+      return false;
+    }
+    if(state.style==="slide") {
+      const R=state.cornerStyle==="square"?0:state.cornerSize,dd=Math.min(3,state.t-1.2),minH=Math.ceil((3+dd*2/3)*10)/10;
+      if(state.t<2.4||state.H<minH||state.L<2*Math.max(R,state.t)+20) {
+        $("status").textContent = `The dovetail slide needs wall thickness of at least 2.4 mm, inside depth of at least ${minH.toFixed(1)} mm for this wall (the groove uses the top of the walls), and a length of at least 20 mm beyond the corner radius.`;
+        return false;
+      }
+    }
+    if(state.magnetic) {
+      const pocketSpan=state.magnetDiameter+state.magnetClearance;
+      const pocketDepth=state.magnetThickness+.15;
+      const mf=state.magnetFaces;
+      if(!mf.trayTop&&!mf.lidBottom&&!mf.trayBottom&&!mf.lidTop) {
+        $("status").textContent="Pick at least one magnet face (tray top, lid bottom, tray bottom or lid top).";
+        return false;
+      }
+      const lay=magnetLayout(state);
+      if(state.t<lay.minWall) {
+        $("status").textContent=`${state.magnetPos==="corners"?"Corner":"Side"} magnet pockets need at least ${lay.minWall.toFixed(1)} mm wall thickness for the ${state.magnetDiameter.toFixed(1)} mm discs${state.magnetPos==="corners"?" with this corner shape":""}; increase wall thickness, reduce magnet size${state.magnetPos==="corners"?", reduce corner size":""}.`;
+        return false;
+      }
+      if(state.magnetPos==="corners") {
+        const topOn=state.style==="slide"?false:mf.trayTop,botOn=mf.trayBottom;
+        if(topOn&&state.traySlits) {$("status").textContent="Corner magnets on the tray top conflict with corner tray slits; turn off tray slits or use side magnets.";return false;}
+        if(botOn&&(state.stackFeet||state.feet)) {$("status").textContent="Corner magnets on the tray bottom conflict with corner feet and stacking feet; turn them off or use side magnets.";return false;}
+      }
+      if(state.b<pocketDepth+.4||state.lt<pocketDepth+.4) {
+        $("status").textContent=`Magnet pockets need bottom and lid thicknesses of at least ${(pocketDepth+.4).toFixed(2)} mm to keep a printable floor.`;
+        return false;
+      }
+      if(state.L<pocketSpan+2*state.cornerSize+4||state.W<pocketSpan+2*state.cornerSize+4) {
+        $("status").textContent="The tray is too small for the selected magnet pockets and corner profile.";
+        return false;
+      }
+    }
+    $("status").textContent = warning;
+    return true;
+  }
+  const lidNames = {plug:"Plug / friction fit", snap:"Flex-fit overcap", overcap:"Lift-off overcap", flat:"Flat overlay", slide:"Sliding panel"};
+  function update() {
+    if (!read()) return;
+    const {L,W,H,t,c} = state;
+    $("outer").textContent=`${(L+2*t).toFixed(1)} × ${(W+2*t).toFixed(1)} × ${(H+state.b).toFixed(1)} mm`;
+    $("fit").textContent=`${lidNames[state.style]} · ${c.toFixed(1)} mm clearance`;
+    const featureLabel = $("feature-label");
+    const featureNames = {plug:"Plug depth", snap:"Skirt depth", overcap:"Skirt depth", flat:"Edge overlap", slide:"Rail depth"};
+    featureLabel.childNodes[0].textContent = featureNames[state.style] + " ";
+    const hints = {
+      plug:state.compliant
+        ?"Plug lid: the insert fits inside the opening with clearance. Optional slits let the insert flex; in this mode its small lead-in is omitted to keep the slits continuous."
+        :"Plug lid: a tapered engagement wall inserts inside the opening. Adjust plug depth and clearance for your printer.",
+      snap:"Flex-fit overcap: a thin skirt flexes over the tray's retention ridge. Optional relief slits reduce corner stiffness; tune clearance and skirt thickness for your printer and material.",
+      overcap:"Lift-off overcap: a plain skirt fits over the tray walls without locking tabs. Optional relief slits make the skirt more compliant.",
+      flat:"Flat overlay: a cover plate rests on the tray rim. Set the edge overhang to 0 for a lid exactly flush with the tray, or a small value (default 0.5 mm) for a slight lip beyond the walls. It has no skirt to flex, so compliance slits are not offered; magnets hold it in place.",
+      slide:"Dovetail slide: the lid plate sits flush on the tray rim and its angled tongue locks into a matching groove in the side walls, so it cannot lift off. The short end wall is lowered so the tongue enters from that end. Optional magnets add double-sided stacking (tray underside and lid top)."
+    };
+    $("hint").textContent = hints[state.style];
+    $("animation-hint").textContent = state.style==="slide"
+      ? "The lid slides in along the dovetail groove through the lowered end wall, then sits flush with the tray."
+      : "The lid lifts clear of the tray during removal, then lowers into its fitted position.";
+    $("flex-wall-label").hidden=state.style!=="snap";
+    $("relief-label").hidden=state.style==="slide";
+    $("lid-slits").disabled=state.style==="slide";
+    $("tray-slit-label").hidden=state.style==="slide";
+    $("tray-slits").disabled=state.style==="slide"||state.style==="snap";
+    $("feature-label").hidden=state.style==="slide"||state.style==="flat";
+    $("flat-overhang-label").hidden=state.style!=="flat";
+    $("magnet-animation").hidden=!state.magnetic;
+    $("print-notes").textContent=(state.style==="slide"?(state.printFlip?"Lid exports plate-down so the dovetail tongue prints upward with 45° overhangs (no supports). ":"Lid exports in its assembled orientation; flip it plate-down in your slicer. ")+"Tray prints upright; the lowered end and groove roof are 45° so no supports are needed. Test-fit the tongue and adjust clearance. ":
+      state.printFlip?"Lid exports flipped so its flat top sits on the bed and skirts/plugs print upward without supports. Tray prints upright; its underside magnet pockets open onto the bed. ":
+      "Lid exports in its assembled orientation; flip it in your slicer so the skirt points up. ")
+      +(state.magnetic?"Magnet pockets are open-face (no pause-at-layer needed): press magnets in after printing, with matching polarity checked first. ":"")
+      +(state.compliant||state.traySlits?"Slits are 1.2 mm wide; use 0.2 mm layers or finer and at least 3 perimeters around them. ":"")
+      +"Use PETG or PLA+ for flexing parts; print thin skirts with the wall direction matching their length.";
+    ["magnet-pos-label","mag-tray-top-label","mag-lid-bottom-label","mag-tray-bottom-label","mag-lid-top-label","magnet-diameter-label","magnet-thickness-label","magnet-clearance-label","magnet-note"].forEach(id=>{
+      $(id).hidden=!$("magnetic").checked;
+    });
+    if(state.style==="slide") ["mag-tray-top-label","mag-lid-bottom-label"].forEach(id=>$(id).hidden=true);
+    $("label-width-label").hidden=$("label-height-label").hidden=!state.labelOn;
+    $("magnet-fit").textContent=state.magnetic?`Minimum wall for this layout: ${magnetLayout(state).minWall.toFixed(1)} mm (current ${state.t.toFixed(1)} mm).`:"";
+    const meshReport=(name,tris)=>{const r=meshStats(tris);return `${name} ${r.bad?`✗ ${r.bad} open/non-manifold edges`:"✓ closed"}`;};
+    $("mesh-check").textContent=meshReport("Tray",trayMesh(state))+" · "+meshReport("Lid",lidMesh(state))+(state.style==="slide"||state.magnetic?" (overlapping closed shells are unioned by the slicer)":"");
+    persist();
+    renderPreview();
+  }
+  function meshStats(tris) {
+    const edges=new Map(),key=p=>`${Math.round(p[0]*1000)},${Math.round(p[1]*1000)},${Math.round(p[2]*1000)}`;
+    for(const tri of tris) for(let i=0;i<3;i++) {
+      const k=key(tri[i])+">"+key(tri[(i+1)%3]);
+      edges.set(k,(edges.get(k)||0)+1);
+    }
+    let bad=0;
+    for(const [k,n] of edges) {
+      const [a,b]=k.split(">");
+      if(n!==1||edges.get(b+">"+a)!==1) bad++;
+    }
+    return {bad};
+  }
+  function clipTriangle(tri,axis,pos,keepBelow) {
+    const side=p=>keepBelow?pos-p[axis]:p[axis]-pos;
+    const out=[];
+    for(let i=0;i<3;i++) {
+      const a=tri[i],b=tri[(i+1)%3],sa=side(a),sb=side(b);
+      if(sa>=0) out.push(a);
+      if((sa>=0)!==(sb>=0)) {
+        const k=sa/(sa-sb);
+        out.push([a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k,a[2]+(b[2]-a[2])*k]);
+      }
+    }
+    return out.length<3?[]:out.length===3?[out]:[[out[0],out[1],out[2]],[out[0],out[2],out[3]]];
+  }
+  function renderPreview() {
+    const canvas=$("preview-canvas"), rect=canvas.getBoundingClientRect();
+    if(!rect.width || !rect.height) return;
+    $("flip-view").textContent=view.elevation<Math.PI/2?"View underside":"View top";
+    const dpr=window.devicePixelRatio || 1;
+    canvas.width=Math.round(rect.width*dpr); canvas.height=Math.round(rect.height*dpr);
+    const ctx=canvas.getContext("2d",{willReadFrequently:true}), width=rect.width,height=rect.height;
+    const mode=$("view-mode").value;
+    const tray=mode==="lid"?[]:trayMesh(state), lid=mode==="tray"?[]:lidMesh(state);
+    let raw=[...tray.map(tri=>({tri,color:[57,132,180],lid:false})),
+      ...lid.map(tri=>({tri,color:[235,161,67],lid:true})),
+      ...magnetFaces(mode)];
+    const axisName=$("section-axis").value,sectionOn=axisName!=="off";
+    if(sectionOn&&raw.length) {
+      const axis={x:0,y:1,z:2}[axisName];
+      let lo=Infinity,hi=-Infinity;
+      for(const face of raw) for(const p of face.tri) {lo=Math.min(lo,p[axis]);hi=Math.max(hi,p[axis]);}
+      const pos=lo+(hi-lo)*Number($("section-pos").value)/100,keepBelow=!$("section-flip").checked;
+      raw=raw.flatMap(face=>clipTriangle(face.tri,axis,pos,keepBelow).map(tri=>({...face,tri})));
+    }
+    if(!raw.length) return;
+    const cA=Math.cos(view.azimuth),sA=Math.sin(view.azimuth),cE=Math.cos(view.elevation),sE=Math.sin(view.elevation);
+    const displacement=face=>{
+      const insertion=face.insert?face.insert*(1-magnet.progress)*14:0;
+      if(!face.lid) return [0,0,insertion];
+      const separated=mode==="exploded"?Math.max(14,state.H*.45):0;
+      if(state.style==="slide") return [-(state.L+2*state.t+12)*(1-animation.progress),0,separated+insertion];
+      return [0,0,separated+insertion+Math.max(14,state.H*.45)*(1-animation.progress)];
+    };
+    const all=raw.flatMap(face=>{
+      const [dx,dy,dz]=displacement(face);
+      return face.tri.map(p=>[p[0]+dx,p[1]+dy,p[2]+dz]);
+    });
+    const min=[0,1,2].map(axis=>Math.min(...all.map(p=>p[axis])));
+    const max=[0,1,2].map(axis=>Math.max(...all.map(p=>p[axis])));
+    const center=min.map((value,index)=>(value+max[index])/2);
+    const rotate=p=>{
+      const x=p[0]-center[0],y=p[1]-center[1],z=p[2]-center[2];
+      const x1=cA*x-sA*y,y1=sA*x+cA*y;
+      return [x1,cE*y1+sE*z,-sE*y1+cE*z];
+    };
+    const transformed=raw.map(face=>{
+      const [dx,dy,dz]=displacement(face);
+      const points=face.tri.map(p=>rotate([p[0]+dx,p[1]+dy,p[2]+dz]));
+      const [a,b,c]=points,u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+      const normal=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+      const len=Math.hypot(...normal)||1;
+      normal.forEach((value,index)=>normal[index]=value/len);
+      if(normal[2]<=.001&&!(sectionOn&&normal[2]<-.001)) return null;
+      if(normal[2]<0) return {points,color:[205,70,70].map(channel=>Math.round(channel*(.7+.3*-normal[2])))};
+      const illumination=Math.max(0,normal[0]*-.35+normal[1]*.45+normal[2]*.82);
+      const factor=.58+.42*illumination;
+      return {points,color:face.color.map(channel=>Math.round(channel*factor))};
+    }).filter(Boolean);
+    const projected=all.map(rotate);
+    const xMin=Math.min(...projected.map(p=>p[0])),xMax=Math.max(...projected.map(p=>p[0]));
+    const yMin=Math.min(...projected.map(p=>p[1])),yMax=Math.max(...projected.map(p=>p[1]));
+    const scale=Math.min((width-54)/(xMax-xMin),(height-54)/(yMax-yMin))*view.zoom;
+    const centerX=(xMin+xMax)/2,centerY=(yMin+yMax)/2;
+    const screen=p=>[width/2+(p[0]-centerX)*scale,height/2-(p[1]-centerY)*scale];
+    ctx.clearRect(0,0,width,height);
+    const gridExtent=Math.ceil(Math.max(state.L,state.W)/10)*10+20;
+    for(let n=-gridExtent;n<=gridExtent;n+=10) {
+      ctx.beginPath();
+      const a=screen(rotate([n,-gridExtent,-.2])),b=screen(rotate([n,gridExtent,-.2]));
+      const c=screen(rotate([-gridExtent,n,-.2])),d=screen(rotate([gridExtent,n,-.2]));
+      ctx.moveTo(...a);ctx.lineTo(...b);ctx.moveTo(...c);ctx.lineTo(...d);
+      ctx.strokeStyle=n%50===0?"#ccd5dc":"#e4e9ed";ctx.lineWidth=n%50===0?1:.6;ctx.stroke();
+    }
+    const image=ctx.getImageData(0,0,canvas.width,canvas.height),depthBuffer=new Float32Array(canvas.width*canvas.height);
+    depthBuffer.fill(-Infinity);
+    for(const face of transformed) {
+      const points=face.points.map(p=>{const [x,y]=screen(p);return [x*dpr,y*dpr,p[2]];});
+      const [a,b,c]=points,area=(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+      if(Math.abs(area)<.001) continue;
+      const minX=Math.max(0,Math.floor(Math.min(a[0],b[0],c[0]))),maxX=Math.min(canvas.width-1,Math.ceil(Math.max(a[0],b[0],c[0])));
+      const minY=Math.max(0,Math.floor(Math.min(a[1],b[1],c[1]))),maxY=Math.min(canvas.height-1,Math.ceil(Math.max(a[1],b[1],c[1])));
+      for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) {
+        const px=x+.5,py=y+.5;
+        const wa=((b[0]-px)*(c[1]-py)-(b[1]-py)*(c[0]-px))/area;
+        const wb=((c[0]-px)*(a[1]-py)-(c[1]-py)*(a[0]-px))/area,wc=1-wa-wb;
+        if(wa<-.001||wb<-.001||wc<-.001) continue;
+        const index=y*canvas.width+x,depth=wa*a[2]+wb*b[2]+wc*c[2];
+        if(depth<=depthBuffer[index]) continue;
+        depthBuffer[index]=depth;const offset=index*4;
+        image.data[offset]=face.color[0];image.data[offset+1]=face.color[1];image.data[offset+2]=face.color[2];image.data[offset+3]=255;
+      }
+    }
+    ctx.putImageData(image,0,0);
+    ctx.fillStyle="#44505a";ctx.font="600 13px system-ui, sans-serif";
+    ctx.fillText(`Outer ${(state.L+2*state.t).toFixed(1)} × ${(state.W+2*state.t).toFixed(1)} × ${(state.H+state.b).toFixed(1)} mm (tray) · grid 10 mm`,12,22);
+  }
+  function triangle(out,a,b,c,normal) {
+    const cross=(u,v)=>[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+    const dot=(u,v)=>u[0]*v[0]+u[1]*v[1]+u[2]*v[2];
+    const n=cross([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
+    if(dot(n,normal)<0) [b,c]=[c,b];
+    out.push([a,b,c]);
+  }
+  function quad(out,a,b,c,d,normal) { triangle(out,a,b,c,normal); triangle(out,a,c,d,normal); }
+  function cr(r,d,kind) {
+    return Math.max(.02,kind==="chamfer"?r+(2-Math.SQRT2)*d:r+d);
+  }
+  function profile(x0,y0,x1,y1,r,kind) {
+    if(kind==="square"||r<=0) return [[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+    const radius=clamp(r,.02,Math.min(x1-x0,y1-y0)/2);
+    if(kind==="chamfer") {
+      const points=[
+        [x0+radius,y0],[x1-radius,y0],[x1,y0+radius],[x1,y1-radius],
+        [x1-radius,y1],[x0+radius,y1],[x0,y1-radius],[x0,y0+radius]
+      ];
+      return points.filter((point,i)=>Math.hypot(point[0]-points[(i+1)%points.length][0],point[1]-points[(i+1)%points.length][1])>1e-6);
+    }
+    if(kind!=="round") return [[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+    const result=[], corners=[
+      [x1-radius,y0+radius,-90],[x1-radius,y1-radius,0],
+      [x0+radius,y1-radius,90],[x0+radius,y0+radius,180]
+    ];
+    corners.forEach(([cx,cy,start])=>{
+      for(let i=0;i<=4;i++) {
+        const angle=(start+i*22.5)*Math.PI/180;
+        result.push([cx+radius*Math.cos(angle),cy+radius*Math.sin(angle)]);
+      }
+    });
+    const unique=[];
+    for(const point of result) {
+      const previous=unique[unique.length-1];
+      if(!previous||Math.hypot(point[0]-previous[0],point[1]-previous[1])>1e-6) unique.push(point);
+    }
+    if(unique.length>1&&Math.hypot(unique[0][0]-unique[unique.length-1][0],unique[0][1]-unique[unique.length-1][1])<=1e-6) unique.pop();
+    return unique;
+  }
+  function fan(out,points,z,normal) {
+    const center=[points.reduce((sum,p)=>sum+p[0],0)/points.length,points.reduce((sum,p)=>sum+p[1],0)/points.length,z];
+    for(let i=0;i<points.length;i++) triangle(out,center,[points[i][0],points[i][1],z],[points[(i+1)%points.length][0],points[(i+1)%points.length][1],z],normal);
+  }
+  function connect(out,lower,upper,normalForEdge) {
+    for(let i=0;i<lower.length;i++) {
+      const j=(i+1)%lower.length;
+      quad(out,[...lower[i][0],lower[i][1]],[...lower[j][0],lower[j][1]],
+        [...upper[j][0],upper[j][1]],[...upper[i][0],upper[i][1]],normalForEdge(i));
+    }
+  }
+  function labelRects(s) {
+    if(!s.labelOn||s.lt<1.2||(s.magnetic&&s.magnetFaces.lidTop)) return [];
+    const x1=s.L+2*s.t,y1=s.W+2*s.t,margin=s.t+3+(s.compliant?8:0);
+    const w=Math.min(s.labelW,x1-2*margin),h=Math.min(s.labelH,y1-2*margin);
+    if(w<6||h<4) return [];
+    const cx=x1/2,cy=y1/2;
+    return [[[cx-w/2,cy-h/2],[cx-w/2,cy+h/2],[cx+w/2,cy+h/2],[cx+w/2,cy-h/2]]];
+  }
+  function topSurface(out,points,z,s) {
+    const mags=pocketsFor(s,"lidTop"),rects=labelRects(s);
+    if(mags.length) surfaceWithPockets(out,points,z,[0,0,1],mags,s.magnetThickness+.15);
+    else if(rects.length) surfaceWithPockets(out,points,z,[0,0,1],rects,.6);
+    else fan(out,points,z,[0,0,1]);
+  }
+  function extrudeProfile(out,points,z0,z1,bottomPockets=[],pocketDepth=0,s=null) {
+    if(bottomPockets.length) surfaceWithPockets(out,points,z0,[0,0,-1],bottomPockets,pocketDepth);
+    else fan(out,points,z0,[0,0,-1]);
+    if(s) topSurface(out,points,z1,s);
+    else fan(out,points,z1,[0,0,1]);
+    for(let i=0;i<points.length;i++) {
+      const a=points[i],b=points[(i+1)%points.length],dx=b[0]-a[0],dy=b[1]-a[1];
+      quad(out,[a[0],a[1],z0],[b[0],b[1],z0],[b[0],b[1],z1],[a[0],a[1],z1],[dy,-dx,0]);
+    }
+  }
+  function triangulatePolygon(points) {
+    const area=points.reduce((sum,p,i)=>sum+p[0]*points[(i+1)%points.length][1]-points[(i+1)%points.length][0]*p[1],0);
+    const orientation=area>=0?1:-1,remaining=points.map((_,i)=>i),triangles=[];
+    const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+    const inside=(p,a,b,c)=>orientation*cross(a,b,p)>=-1e-8
+      &&orientation*cross(b,c,p)>=-1e-8&&orientation*cross(c,a,p)>=-1e-8;
+    while(remaining.length>3) {
+      let clipped=false;
+      for(let i=0;i<remaining.length;i++) {
+        const prev=remaining[(i+remaining.length-1)%remaining.length],curr=remaining[i],next=remaining[(i+1)%remaining.length];
+        const a=points[prev],b=points[curr],c=points[next];
+        if(orientation*cross(a,b,c)<=1e-8) continue;
+        if(remaining.some(index=>index!==prev&&index!==curr&&index!==next&&inside(points[index],a,b,c))) continue;
+        triangles.push([a,b,c]);remaining.splice(i,1);clipped=true;break;
+      }
+      if(!clipped) throw new Error("Unable to triangulate the sliding panel profile.");
+    }
+    triangles.push(remaining.map(index=>points[index]));
+    return triangles;
+  }
+  function triangulatePolygonWithHoles(outer,holes) {
+    let polygon=outer.slice();
+    const area=points=>points.reduce((sum,p,i)=>sum+p[0]*points[(i+1)%points.length][1]-points[(i+1)%points.length][0]*p[1],0);
+    if(area(polygon)<0) polygon.reverse();
+    const inside=(point,points)=>{
+      let result=false;
+      for(let i=0,j=points.length-1;i<points.length;j=i++) {
+        const a=points[i],b=points[j];
+        if((a[1]>point[1])!==(b[1]>point[1])&&point[0]<(b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0]) result=!result;
+      }
+      return result;
+    };
+    const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+    const intersects=(a,b,c,d)=>{
+      const ab1=cross(a,b,c),ab2=cross(a,b,d),cd1=cross(c,d,a),cd2=cross(c,d,b);
+      return ab1*ab2<-1e-8&&cd1*cd2<-1e-8;
+    };
+    for(let holeIndex=0;holeIndex<holes.length;holeIndex++) {
+      let hole=holes[holeIndex].slice();
+      if(area(hole)>0) hole.reverse();
+      let bridge=null;
+      for(let hi=0;hi<hole.length;hi++) for(let oi=0;oi<polygon.length;oi++) {
+        const a=hole[hi],b=polygon[oi],mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+        if(!inside(mid,outer)||holes.some((other,index)=>index!==holeIndex&&inside(mid,other))) continue;
+        const boundaries=[polygon,...holes];
+        if(boundaries.some(loop=>loop.some((p,i)=>{
+          const q=loop[(i+1)%loop.length];
+          if([p,q].some(point=>Math.hypot(point[0]-a[0],point[1]-a[1])<1e-7
+            ||Math.hypot(point[0]-b[0],point[1]-b[1])<1e-7)) return false;
+          return intersects(a,b,p,q);
+        }))) continue;
+        const distance=Math.hypot(a[0]-b[0],a[1]-b[1]);
+        if(!bridge||distance<bridge.distance) bridge={hi,oi,distance};
+      }
+      if(!bridge) throw new Error("Unable to place a magnet pocket inside the part.");
+      const {hi,oi}=bridge,walk=hole.slice(hi).concat(hole.slice(0,hi));
+      polygon=polygon.slice(0,oi+1).concat(walk,[walk[0],polygon[oi]],polygon.slice(oi+1));
+    }
+    const orientation=area(polygon)>=0?1:-1,remaining=polygon.map((_,i)=>i),triangles=[];
+    const same=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1])<1e-7;
+    const strictInside=(p,a,b,c)=>orientation*cross(a,b,p)>-1e-8
+      &&orientation*cross(b,c,p)>-1e-8&&orientation*cross(c,a,p)>-1e-8;
+    while(remaining.length>3) {
+      let clipped=false;
+      for(let i=0;i<remaining.length;i++) {
+        const prev=remaining[(i+remaining.length-1)%remaining.length],curr=remaining[i],next=remaining[(i+1)%remaining.length];
+        const a=polygon[prev],b=polygon[curr],c=polygon[next];
+        if(orientation*cross(a,b,c)<=1e-8) continue;
+        if(remaining.some(index=>index!==prev&&index!==curr&&index!==next
+          &&!same(polygon[index],a)&&!same(polygon[index],b)&&!same(polygon[index],c)
+          &&strictInside(polygon[index],a,b,c))) continue;
+        triangles.push([a,b,c]);remaining.splice(i,1);clipped=true;break;
+      }
+      if(!clipped) {
+        const duplicate=remaining.findIndex((index,i)=>{
+          const next=remaining[(i+1)%remaining.length];
+          return same(polygon[index],polygon[next])||Math.abs(cross(
+            polygon[remaining[(i+remaining.length-1)%remaining.length]],polygon[index],polygon[next]))<1e-8;
+        });
+        if(duplicate<0) throw new Error("Unable to triangulate a magnet pocket.");
+        remaining.splice(duplicate,1);
+      }
+    }
+    if(remaining.length===3) triangles.push(remaining.map(index=>polygon[index]));
+    return triangles;
+  }
+  function pointInPolygon(point,loop) {
+    let result=false;
+    for(let i=0,j=loop.length-1;i<loop.length;j=i++) {
+      const a=loop[i],b=loop[j];
+      if((a[1]>point[1])!==(b[1]>point[1])&&point[0]<(b[0]-a[0])*(point[1]-a[1])/(b[1]-a[1])+a[0]) result=!result;
+    }
+    return result;
+  }
+  function surfaceWithPockets(out,points,z,normal,pockets,depth=0,cavity=null) {
+    const inside=pointInPolygon;
+    const holes=pockets.filter(hole=>hole.every(point=>inside(point,points)&&!(cavity&&inside(point,cavity))));
+    for(const [a,b,c] of (cavity?triangulatePolygonWithHoles(points,[cavity,...holes]):holes.length?triangulatePolygonWithHoles(points,holes):triangulatePolygon(points)))
+      triangle(out,[a[0],a[1],z],[b[0],b[1],z],[c[0],c[1],z],normal);
+    if(!depth) return;
+    const floorZ=z+(normal[2]>0?-depth:depth);
+    for(const hole of holes) {
+      for(let i=0;i<hole.length;i++) {
+        const a=hole[i],b=hole[(i+1)%hole.length],dx=b[0]-a[0],dy=b[1]-a[1];
+        quad(out,[a[0],a[1],z],[b[0],b[1],z],[b[0],b[1],floorZ],[a[0],a[1],floorZ],[dy,-dx,0]);
+      }
+      fan(out,hole,floorZ,normal);
+    }
+  }
+  function magnetLayout(s) {
+    const {L,W,t,magnetDiameter,magnetClearance,cornerStyle,cornerSize}=s,x1=L+2*t,y1=W+2*t,h=(magnetDiameter+magnetClearance)/2;
+    if(s.magnetPos==="corners") {
+      const R=cornerStyle==="square"?0:cornerSize;
+      const u=cornerStyle==="round"?Math.max(.5,.293*R+.354):cornerStyle==="chamfer"?Math.max(.5,(R+.707)/2):.5;
+      const c=Math.max(t/2,h+u);
+      return {h,c,minWall:2*h+u+.5,centers:[[c,c],[x1-c,c],[c,y1-c],[x1-c,y1-c]]};
+    }
+    return {h,c:t/2,minWall:2*h+1,centers:[[x1/2,t/2],[x1/2,y1-t/2],[t/2,y1/2],[x1-t/2,y1/2]]};
+  }
+  function pocketsFor(s,face) {
+    if(!s.magnetic||!s.magnetFaces[face]) return [];
+    const {h,centers}=magnetLayout(s);
+    return centers.map(([x,y])=>[[x-h,y-h],[x-h,y+h],[x+h,y+h],[x+h,y-h]]);
+  }
+  function extrudePolygon(out,points,z0,z1,bottomPockets=[]) {
+    surfaceWithPockets(out,points,z0,[0,0,-1],bottomPockets,0);
+    for(const [a,b,c] of triangulatePolygon(points)) {
+      triangle(out,[a[0],a[1],z1],[b[0],b[1],z1],[c[0],c[1],z1],[0,0,1]);
+    }
+    for(let i=0;i<points.length;i++) {
+      const a=points[i],b=points[(i+1)%points.length],dx=b[0]-a[0],dy=b[1]-a[1];
+      quad(out,[a[0],a[1],z0],[b[0],b[1],z0],[b[0],b[1],z1],[a[0],a[1],z1],[dy,-dx,0]);
+    }
+  }
+  function ring(out,outer,inner,z,normal,skipEdges=new Set(),pockets=[],depth=0) {
+    if(pockets.length&&!skipEdges.size) {
+      const quads=outer.map((_,i)=>{const j=(i+1)%outer.length;return [outer[i],outer[j],inner[j],inner[i]];});
+      if(!pockets.every(p=>quads.some(q=>p.every(pt=>pointInPolygon(pt,q))))) {
+        surfaceWithPockets(out,outer,z,normal,pockets,depth,inner);
+        return;
+      }
+    }
+    for(let i=0;i<outer.length;i++) {
+      if(skipEdges.has(i)) continue;
+      const j=(i+1)%outer.length;
+      surfaceWithPockets(out,[outer[i],outer[j],inner[j],inner[i]],z,normal,pockets,depth);
+    }
+  }
+  function connectSkirt(out,lower,upper,normalForEdge,reliefEdges,reliefTop,splitEdges=new Set(),splitZ=0) {
+    for(let i=0;i<lower.length;i++) {
+      const j=(i+1)%lower.length;
+      if(reliefEdges.has(i)) {
+        quad(out,[...lower[i][0],reliefTop],[...lower[j][0],reliefTop],
+          [...upper[j][0],upper[j][1]],[...upper[i][0],upper[i][1]],normalForEdge(i));
+      } else if(splitEdges.has(i)&&splitZ>lower[i][1]&&splitZ<upper[i][1]) {
+        quad(out,[...lower[i][0],lower[i][1]],[...lower[j][0],lower[j][1]],
+          [...upper[j][0],splitZ],[...upper[i][0],splitZ],normalForEdge(i));
+        quad(out,[...upper[i][0],splitZ],[...upper[j][0],splitZ],
+          [...upper[j][0],upper[j][1]],[...upper[i][0],upper[i][1]],normalForEdge(i));
+      } else {
+        quad(out,[...lower[i][0],lower[i][1]],[...lower[j][0],lower[j][1]],
+          [...upper[j][0],upper[j][1]],[...upper[i][0],upper[i][1]],normalForEdge(i));
+      }
+    }
+  }
+  function addCornerReliefSlots(out,outer,inner,zA,zB,edges,capZ,capNormal) {
+    for(const i of edges) {
+      const j=(i+1)%outer.length,a=outer[i],b=outer[j];
+      const tangent=[b[0]-a[0],b[1]-a[1],0];
+      quad(out,[...outer[i],zA],[...inner[i],zA],[...inner[i],zB],[...outer[i],zB],tangent);
+      quad(out,[...outer[j],zA],[...inner[j],zA],[...inner[j],zB],[...outer[j],zB],tangent.map(v=>-v));
+      quad(out,[...outer[i],capZ],[...outer[j],capZ],[...inner[j],capZ],[...inner[i],capZ],capNormal);
+    }
+  }
+  function complianceProfile(points,kind,opts={}) {
+    const {corners=true,sides=false,width=1.2}=opts,n=points.length,edges=new Set(),result=[];
+    const lerp=(a,b,f)=>[a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f];
+    const len=i=>Math.hypot(points[(i+1)%n][0]-points[i][0],points[(i+1)%n][1]-points[i][1]);
+    const slotsAt=(a,b,centers)=>{
+      const length=Math.hypot(b[0]-a[0],b[1]-a[1]),h=Math.min(width,length*.3)/2/length;
+      for(const f of centers) {result.push(lerp(a,b,f-h));edges.add(result.length-1);result.push(lerp(a,b,f+h));}
+    };
+    if(n===4) {
+      for(let i=0;i<4;i++) {
+        const prev=points[(i+3)%4],corner=points[i],next=points[(i+1)%4];
+        const bl=Math.hypot(corner[0]-prev[0],corner[1]-prev[1]),al=Math.hypot(next[0]-corner[0],next[1]-corner[1]);
+        if(corners) {
+          result.push(lerp(corner,prev,Math.min(width/2,bl*.2)/bl));edges.add(result.length-1);
+          result.push(lerp(corner,next,Math.min(width/2,al*.2)/al));
+        } else result.push(corner);
+        if(sides) slotsAt(corner,next,[.25,.75]);
+      }
+      return {points:result,edges};
+    }
+    const cx=points.reduce((s,p)=>s+p[0],0)/n,cy=points.reduce((s,p)=>s+p[1],0)/n,pick=new Set();
+    if(corners) {
+      const best={};
+      for(let i=0;i<n;i++) {
+        const a=points[i],b=points[(i+1)%n],dx=b[0]-a[0],dy=b[1]-a[1];
+        if(Math.abs(dx)<1e-6||Math.abs(dy)<1e-6) continue;
+        const key=((a[0]+b[0])/2>cx?1:0)+((a[1]+b[1])/2>cy?2:0),score=Math.abs(Math.abs(dx)-Math.abs(dy))/Math.hypot(dx,dy);
+        if(!best[key]||score<best[key].score-1e-9) best[key]={i,score};
+      }
+      Object.values(best).forEach(v=>pick.add(v.i));
+    }
+    const sidePick=new Set();
+    if(sides) {
+      const best={};
+      for(let i=0;i<n;i++) {
+        const a=points[i],b=points[(i+1)%n],dx=b[0]-a[0],dy=b[1]-a[1];
+        let key;
+        if(Math.abs(dy)<1e-6) key=(a[1]>cy?"t":"b");
+        else if(Math.abs(dx)<1e-6) key=(a[0]>cx?"r":"l");
+        else continue;
+        if(!best[key]||len(i)>len(best[key])+1e-9) best[key]=i;
+      }
+      Object.values(best).forEach(i=>sidePick.add(i));
+    }
+    for(let i=0;i<n;i++) {
+      const a=points[i],b=points[(i+1)%n];
+      result.push(a);
+      if(pick.has(i)) slotsAt(a,b,[.5]);
+      else if(sidePick.has(i)) slotsAt(a,b,[.25,.75]);
+    }
+    return {points:result,edges};
+  }
+  function slideGeometry(s) {
+    const {H,b,t,c,cornerStyle,cornerSize}=s;
+    const top=H+b,d=Math.min(3,t-1.2),delta=d/3,slopeH=d-delta;
+    const R=cornerStyle==="square"?0:cornerSize,gs=top-(.5+slopeH+1);
+    const arcEnd=off=>R>0?t+cr(R,-(t-off),cornerStyle):t;
+    return {top,d,delta,gs,z1:gs+.5,z2:gs+.5+slopeH,R,innerR:R>0?cr(R,-t,cornerStyle):0,
+      xc:Math.max(R,arcEnd(0),arcEnd(d),arcEnd(delta),t)+.5,gap:Math.max(.05,Math.min(.3,c/2))};
+  }
+  function cutChain(p,xc) {
+    const n=p.length;let lo=-1,hi=-1;
+    for(let i=0;i<n;i++) {
+      const a=p[i],b=p[(i+1)%n];
+      if(a[0]<xc&&b[0]>=xc) lo=i; else if(a[0]>=xc&&b[0]<xc) hi=i;
+    }
+    const cut=(a,b)=>[xc,a[1]+(b[1]-a[1])*(xc-a[0])/(b[0]-a[0])];
+    const chain=[cut(p[lo],p[(lo+1)%n])];
+    for(let i=(lo+1)%n;;i=(i+1)%n) {chain.push(p[i]);if(i===hi) break;}
+    chain.push(cut(p[hi],p[(hi+1)%n]));
+    return chain;
+  }
+  function addSlideUpper(out,s) {
+    const {L,W,t,cornerStyle}=s,g=slideGeometry(s),x1=L+2*t,y1=W+2*t;
+    const co=cutChain(profile(0,0,x1,y1,g.R,cornerStyle),g.xc);
+    const rad=off=>g.R>0?cr(g.R,-off,cornerStyle):0;
+    const cb=cutChain(profile(t,t-g.d,L+t,W+t+g.d,rad(t-g.d),cornerStyle),g.xc);
+    const cq=cutChain(profile(t,t-g.delta,L+t,W+t+g.delta,rad(t-g.delta),cornerStyle),g.xc);
+    const zlo=g.gs-.2,n=co.length;
+    const sec=k=>[[...co[k],zlo],[...cb[k],zlo],[...cb[k],g.z1],[...cq[k],g.z2],[...cq[k],g.top],[...co[k],g.top]];
+    for(let k=0;k<n-1;k++) {
+      const a=co[k],b=co[k+1],len=Math.hypot(b[0]-a[0],b[1]-a[1])||1;
+      const ux=(b[1]-a[1])/len,uy=(a[0]-b[0])/len,S=sec(k),T=sec(k+1);
+      const normals=[[0,0,-1],[-ux,-uy,0],[-ux*.707,-uy*.707,-.707],[-ux,-uy,0],[0,0,1],[ux,uy,0]];
+      for(let e=0;e<6;e++) quad(out,S[e],S[(e+1)%6],T[(e+1)%6],T[e],normals[e]);
+    }
+    for(const P of [sec(0),sec(n-1)])
+      for(const [i,j,k] of [[0,1,2],[0,2,5],[2,3,4],[2,4,5]]) triangle(out,P[i],P[j],P[k],[-1,0,0]);
+  }
+  function box(out,x0,y0,z0,x1,y1,z1,r=0,kind="round") {
+    extrudeProfile(out,profile(x0,y0,x1,y1,r,kind),z0,z1);
+  }
+  function stackPositions(s) {
+    const {L,W,t}=s,size=Math.min(10,t*4,L/5,W/5),inset=Math.max(size/2,4);
+    const x1=L+2*t,y1=W+2*t;
+    return {
+      size,
+      centers:[[inset+size/2,inset+size/2],[x1-inset-size/2,inset+size/2],
+        [inset+size/2,y1-inset-size/2],[x1-inset-size/2,y1-inset-size/2]]
+    };
+  }
+  function addStackFeet(out,s) {
+    const {size,centers}=stackPositions(s);
+    for(const [cx,cy] of centers)
+      box(out,cx-size/2,cy-size/2,-1.4,cx+size/2,cy+size/2,0,1,"round");
+  }
+  function addStackGuideRim(out,s,z) {
+    const {L,W,t,cornerStyle,cornerSize,c}=s;
+    const x1=L+2*t,y1=W+2*t,outerGap=2,innerGap=Math.min(.8,c+.25);
+    const outer=profile(-outerGap,-outerGap,x1+outerGap,y1+outerGap,cr(cornerSize,outerGap,cornerStyle),cornerStyle);
+    const inner=profile(-innerGap,-innerGap,x1+innerGap,y1+innerGap,cr(cornerSize,innerGap,cornerStyle),cornerStyle);
+    const outerBottom=outer.map(p=>[p,z]),outerTop=outer.map(p=>[p,z+1.4]);
+    const innerBottom=inner.map(p=>[p,z]),innerTop=inner.map(p=>[p,z+1.4]);
+    const webIn=.4,webZ=z-.6,web=profile(webIn,webIn,x1-webIn,y1-webIn,cr(cornerSize,-webIn,cornerStyle),cornerStyle);
+    const webLow=web.map(p=>[p,webZ]),webHigh=web.map(p=>[p,z]),outerLow=outer.map(p=>[p,webZ]);
+    ring(out,outer,web,webZ,[0,0,-1]);ring(out,inner,web,z,[0,0,1]);ring(out,outer,inner,z+1.4,[0,0,1]);
+    connect(out,outerLow,outerTop,i=>{
+      const a=outer[i],b=outer[(i+1)%outer.length];return [b[1]-a[1],a[0]-b[0],0];
+    });
+    connect(out,webLow,webHigh,i=>{
+      const a=web[i],b=web[(i+1)%web.length];return [a[1]-b[1],b[0]-a[0],0];
+    });
+    connect(out,innerBottom,innerTop,i=>{
+      const a=inner[i],b=inner[(i+1)%inner.length];return [a[1]-b[1],b[0]-a[0],0];
+    });
+  }
+  function trayMesh(s) {
+    const {L,W,H,t,b,c,lt,f,cornerStyle,cornerSize,rows,columns,dividerThickness,dividerFillet,dividerHeight,feet,style}=s;
+    const x1=L+2*t,y1=W+2*t,top=style==="slide"?slideGeometry(s).gs:H+b,m=[];
+    const cornerR=cornerStyle==="square"?0:cornerSize,innerR=cornerR>0?cr(cornerR,-t,cornerStyle):0;
+    let outer=profile(0,0,x1,y1,cornerR,cornerStyle);const pockets=style==="slide"?[]:pocketsFor(s,"trayTop"),botPockets=pocketsFor(s,"trayBottom"),magnetDepth=s.magnetThickness+.15;
+    let inner=profile(t,t,L+t,W+t,innerR,cornerStyle),trayRelief=new Set();
+    const slitFloor=top-Math.min(10,H*.5);
+    if(s.traySlits) {
+      const o=complianceProfile(outer,cornerStyle,{corners:true});
+      outer=o.points;trayRelief=o.edges;inner=complianceProfile(inner,cornerStyle,{corners:true}).points;
+    }
+    const usableDividerHeight=style==="slide"?Math.min(dividerHeight,Math.max(0,slideGeometry(s).gs-b-.3)):dividerHeight;
+    if(botPockets.length) surfaceWithPockets(m,outer,0,[0,0,-1],botPockets,magnetDepth);
+    else fan(m,outer,0,[0,0,-1]);
+    fan(m,inner,b,[0,0,1]);
+    const ridgeWidth=.35,ridgeLow=top-1.6,ridgeHigh=top-1.15;
+    const ridge=style==="snap"?profile(-ridgeWidth,-ridgeWidth,x1+ridgeWidth,y1+ridgeWidth,
+      cornerR>0?cr(cornerR,ridgeWidth,cornerStyle):0,cornerStyle):outer;
+    if(style==="snap") ring(m,ridge,outer,ridgeLow,[0,0,-1]);
+    for(let i=0;i<outer.length;i++) {
+      const j=(i+1)%outer.length,oa=outer[i],ob=outer[j],ia=inner[i],ib=inner[j];
+      const outerNormal=[ob[1]-oa[1],oa[0]-ob[0],0];
+      if(style==="snap") {
+        quad(m,[oa[0],oa[1],0],[ob[0],ob[1],0],[ob[0],ob[1],ridgeLow],[oa[0],oa[1],ridgeLow],outerNormal);
+        quad(m,[ridge[i][0],ridge[i][1],ridgeLow],[ridge[j][0],ridge[j][1],ridgeLow],[ridge[j][0],ridge[j][1],ridgeHigh],[ridge[i][0],ridge[i][1],ridgeHigh],outerNormal);
+        quad(m,[oa[0],oa[1],ridgeHigh],[ob[0],ob[1],ridgeHigh],[ob[0],ob[1],top],[oa[0],oa[1],top],outerNormal);
+      } else if(s.traySlits) {
+        quad(m,[oa[0],oa[1],0],[ob[0],ob[1],0],[ob[0],ob[1],slitFloor],[oa[0],oa[1],slitFloor],outerNormal);
+        if(!trayRelief.has(i)) quad(m,[oa[0],oa[1],slitFloor],[ob[0],ob[1],slitFloor],[ob[0],ob[1],top],[oa[0],oa[1],top],outerNormal);
+      } else quad(m,[oa[0],oa[1],0],[ob[0],ob[1],0],[ob[0],ob[1],top],[oa[0],oa[1],top],outerNormal);
+      const innerNormal=[ia[1]-ib[1],ib[0]-ia[0],0];
+      if(s.traySlits) {
+        quad(m,[ia[0],ia[1],b],[ia[0],ia[1],slitFloor],[ib[0],ib[1],slitFloor],[ib[0],ib[1],b],innerNormal);
+        if(!trayRelief.has(i)) quad(m,[ia[0],ia[1],slitFloor],[ia[0],ia[1],top],[ib[0],ib[1],top],[ib[0],ib[1],slitFloor],innerNormal);
+      } else quad(m,[ia[0],ia[1],b],[ia[0],ia[1],top],[ib[0],ib[1],top],[ib[0],ib[1],b],innerNormal);
+      if((!pockets.length||style==="slide")&&!trayRelief.has(i))
+        quad(m,[oa[0],oa[1],top],[ob[0],ob[1],top],[ib[0],ib[1],top],[ia[0],ia[1],top],[0,0,1]);
+    }
+    if(pockets.length&&style!=="slide") ring(m,outer,inner,top,[0,0,1],trayRelief,pockets,magnetDepth);
+    if(trayRelief.size) addCornerReliefSlots(m,outer,inner,slitFloor,top,trayRelief,slitFloor,[0,0,1]);
+    if(style==="snap") ring(m,ridge,outer,ridgeHigh,[0,0,1]);
+    if(style==="slide") addSlideUpper(m,s);
+    const columnBands=[];
+    if(columns>1) for(let i=1;i<columns;i++) {
+      const center=t+L*s.colFracs[i-1],half=Math.min(dividerThickness/2,L/(columns*3));
+      columnBands.push({center,half});
+    }
+    if(columns>1) for(let i=1;i<columns;i++) {
+      const {center,half}=columnBands[i-1];
+      const radius=Math.min(dividerFillet,half,W/2);
+      if(usableDividerHeight>.2) box(m,center-half,t-.05,b,center+half,W+t+.05,b+usableDividerHeight,radius,cornerStyle==="chamfer"?"chamfer":"round");
+    }
+    if(rows>1) for(let i=1;i<rows;i++) {
+      const center=t+W*s.rowFracs[i-1],half=Math.min(dividerThickness/2,W/(rows*3));
+      const radius=Math.min(dividerFillet,half,L/2),relief=.2;
+      let segmentStart=t-.05;
+      for(const band of columnBands) {
+        const segmentEnd=band.center-band.half-relief;
+        if(usableDividerHeight>.2&&segmentEnd-segmentStart>.2) box(m,segmentStart,center-half,b,segmentEnd,center+half,b+usableDividerHeight,radius,cornerStyle==="chamfer"?"chamfer":"round");
+        segmentStart=band.center+band.half+relief;
+      }
+      if(usableDividerHeight>.2&&L+t+.05-segmentStart>.2) box(m,segmentStart,center-half,b,L+t+.05,center+half,b+usableDividerHeight,radius,cornerStyle==="chamfer"?"chamfer":"round");
+    }
+    if(s.stackFeet) addStackFeet(m,s);
+    else if(feet) {
+      const size=Math.min(10,t*4,L/5,W/5), inset=Math.max(size/2,4), z0=-1.2;
+      for(const x of [inset,x1-inset-size]) for(const y of [inset,y1-inset-size])
+        box(m,x,y,z0,x+size,y+size,0,Math.min(2,size/3),"round");
+    }
+    return m;
+  }
+  function lidMesh(s) {
+    const {L,W,H,t,b,c,lt,f,style,cornerStyle,cornerSize}=s;
+    const rim=H+b,x1=L+2*t,y1=W+2*t,top=rim+lt,m=[],pockets=pocketsFor(s,"lidBottom"),magnetDepth=s.magnetThickness+.15,slitOpts={corners:s.slitCorners,sides:s.slitSides};
+    if(style==="flat") {
+      const overlap=s.flatOverhang;
+      let flatProfile=profile(-overlap,-overlap,x1+overlap,y1+overlap,cr(cornerSize,overlap,cornerStyle),cornerStyle);
+      if(s.compliant) flatProfile=complianceProfile(flatProfile,cornerStyle,slitOpts).points;
+      extrudeProfile(m,flatProfile,rim,top,pockets,magnetDepth,s);
+      if(s.stackRim) addStackGuideRim(m,s,top);
+      return m;
+    }
+    if(style==="slide") {
+      const g=slideGeometry(s),zp0=g.top+g.gap,zt=zp0+lt,zb=g.gs+Math.min(c,.4),xb=L+t-c;
+      const rT=off=>g.R>0?cr(g.R,-off,cornerStyle):0,O=profile(0,0,x1,y1,g.R,cornerStyle);
+      const T0=profile(g.xc,t-g.d+c,xb,W+t+g.d-c,rT(t-g.d+c),cornerStyle);
+      const T2=profile(g.xc,t-g.delta+c,xb,W+t+g.delta-c,rT(t-g.delta+c),cornerStyle);
+      const at=(P,z)=>P.map(p=>[p,z]);
+      const edge=P=>i=>{const a=P[i],q=P[(i+1)%P.length];return [q[1]-a[1],a[0]-q[0],0];};
+      const slope=i=>{
+        const [nx,ny]=edge(T0)(i),len=Math.hypot(nx,ny)||1;return [nx/len*.707,ny/len*.707,.707];
+      };
+      fan(m,T0,zb,[0,0,-1]);
+      connect(m,at(T0,zb),at(T0,g.z1),edge(T0));
+      connect(m,at(T0,g.z1),at(T2,g.z2),slope);
+      connect(m,at(T2,g.z2),at(T2,zp0),edge(T2));
+      ring(m,O,T2,zp0,[0,0,-1]);
+      const xe=g.xc-c,filler=[];
+      for(let i=0;i<O.length;i++) {
+        const a=O[i],q=O[(i+1)%O.length];
+        if(a[0]<xe) filler.push(a);
+        if((a[0]<xe)!==(q[0]<xe)) filler.push([xe,a[1]+(q[1]-a[1])*(xe-a[0])/(q[0]-a[0])]);
+      }
+      if(filler.length>=3&&zp0-zb>.1) extrudeProfile(m,filler,zb,zp0+Math.min(.2,lt/2));
+      connect(m,at(O,zp0),at(O,zt),edge(O));
+      topSurface(m,O,zt,s);
+      if(s.stackRim) addStackGuideRim(m,s,zt);
+      return m;
+    }
+    if(style==="plug") {
+      let outer=profile(0,0,x1,y1,cornerSize,cornerStyle);
+      const leadIn=s.compliant?0:.35,plugWall=Math.max(.8,t*.7);
+      let plug=profile(t+c,t+c,L+t-c,W+t-c,cr(cornerSize,-(t+c),cornerStyle),cornerStyle);
+      let plugInner=profile(t+c+plugWall,t+c+plugWall,L+t-c-plugWall,W+t-c-plugWall,cr(cornerSize,-(t+c+plugWall),cornerStyle),cornerStyle);
+      let plugEnd=profile(t+c+leadIn,t+c+leadIn,L+t-c-leadIn,W+t-c-leadIn,cr(cornerSize,-(t+c+leadIn),cornerStyle),cornerStyle);
+      let plugInnerEnd=profile(t+c+plugWall+leadIn,t+c+plugWall+leadIn,L+t-c-plugWall-leadIn,W+t-c-plugWall-leadIn,cr(cornerSize,-(t+c+plugWall+leadIn),cornerStyle),cornerStyle);
+      let reliefEdges=new Set();
+      if(s.compliant) {
+        outer=complianceProfile(outer,cornerStyle,slitOpts).points;
+        const plugProfile=complianceProfile(plug,cornerStyle,slitOpts);
+        plug=plugProfile.points;reliefEdges=plugProfile.edges;
+        plugInner=complianceProfile(plugInner,cornerStyle,slitOpts).points;
+        plugEnd=complianceProfile(plugEnd,cornerStyle,slitOpts).points;
+        plugInnerEnd=complianceProfile(plugInnerEnd,cornerStyle,slitOpts).points;
+      }
+      const engagement=Math.min(f,H-2);
+      const topOuter=outer.map(p=>[p,top]),outerRim=outer.map(p=>[p,rim]);
+      const plugLower=plugEnd.map(p=>[p,rim-engagement]),plugRim=plug.map(p=>[p,rim]);
+      const innerLower=plugInnerEnd.map(p=>[p,rim-engagement]),innerRim=plugInner.map(p=>[p,rim]);
+      topSurface(m,outer,top,s);ring(m,outer,plug,rim,[0,0,-1],new Set(),pockets,magnetDepth);
+      connect(m,outerRim,topOuter,i=>{
+        const a=outer[i],bb=outer[(i+1)%outer.length];return [bb[1]-a[1],a[0]-bb[0],0];
+      });
+      fan(m,plugInner,rim,[0,0,-1]);
+      const plugReliefTop=rim-engagement+Math.min(4,Math.max(1.5,engagement*.45));
+      const plugSplitEdges=new Set(reliefEdges.size?plug.map((_,i)=>i).filter(i=>!reliefEdges.has(i)):[]);
+      const plugOuterNormal=i=>{
+        const a=plug[i],bb=plug[(i+1)%plug.length];return [bb[1]-a[1],a[0]-bb[0],0];
+      };
+      const plugInnerNormal=i=>{
+        const a=plugInner[i],bb=plugInner[(i+1)%plugInner.length];return [a[1]-bb[1],bb[0]-a[0],0];
+      };
+      if(reliefEdges.size) {
+        connectSkirt(m,plugLower,plugRim,plugOuterNormal,reliefEdges,plugReliefTop,plugSplitEdges,plugReliefTop);
+        connectSkirt(m,innerLower,innerRim,plugInnerNormal,reliefEdges,plugReliefTop,plugSplitEdges,plugReliefTop);
+        ring(m,plugEnd,plugInnerEnd,rim-engagement,[0,0,-1],reliefEdges);
+        addCornerReliefSlots(m,plugEnd,plugInnerEnd,rim-engagement,plugReliefTop,reliefEdges,plugReliefTop,[0,0,-1]);
+      } else {
+        connect(m,plugLower,plugRim,plugOuterNormal);
+        connect(m,innerLower,innerRim,plugInnerNormal);
+        ring(m,plugEnd,plugInnerEnd,rim-engagement,[0,0,-1]);
+      }
+      if(s.stackRim) addStackGuideRim(m,s,top);
+      return m;
+    }
+    const wall=style==="snap"?s.flexWall:Math.max(1.2,t);
+    let outer=profile(-c-wall,-c-wall,x1+c+wall,y1+c+wall,cr(cornerSize,c+wall,cornerStyle),cornerStyle);
+    let inside=profile(-c,-c,x1+c,y1+c,cr(cornerSize,c,cornerStyle),cornerStyle);
+    let reliefEdges=new Set();
+    if(s.compliant) {
+      const outerProfile=complianceProfile(outer,cornerStyle,slitOpts);
+      outer=outerProfile.points;reliefEdges=outerProfile.edges;
+      inside=complianceProfile(inside,cornerStyle,slitOpts).points;
+    }
+    const bottomZ=top-Math.min(f,H),ceiling=top-lt;
+    const outerBottom=outer.map(p=>[p,bottomZ]),outerTop=outer.map(p=>[p,top]);
+    const insideBottom=inside.map(p=>[p,bottomZ]),insideTop=inside.map(p=>[p,ceiling]);
+    const ridgeWidth=.35,ridgeLow=rim-1.6,ridgeHigh=rim-.75;
+    topSurface(m,outer,top,s);
+    const splitEdges=new Set(reliefEdges.size?outer.map((_,i)=>i).filter(i=>!reliefEdges.has(i)):[]);
+    const reliefTop=Math.min(ridgeLow-.25,bottomZ+Math.min(5,Math.max(2,(top-bottomZ)*.45)));
+    connectSkirt(m,outerBottom,outerTop,i=>{
+      const a=outer[i],bb=outer[(i+1)%outer.length];return [bb[1]-a[1],a[0]-bb[0],0];
+    },reliefEdges,reliefTop,splitEdges,reliefTop);
+    const innerNormal=i=>{
+      const a=inside[i],bb=inside[(i+1)%inside.length];return [a[1]-bb[1],bb[0]-a[0],0];
+    };
+    if(style==="snap") {
+      let hook=profile(-c+ridgeWidth,-c+ridgeWidth,x1+c-ridgeWidth,y1+c-ridgeWidth,
+        cr(cornerSize,c-ridgeWidth,cornerStyle),cornerStyle);
+      if(s.compliant) hook=complianceProfile(hook,cornerStyle,slitOpts).points;
+      const hookLow=ridgeLow+.25,hookHigh=ridgeHigh-.25;
+      connectSkirt(m,insideBottom,inside.map(p=>[p,ridgeLow]),innerNormal,reliefEdges,reliefTop,splitEdges,reliefTop);
+      connect(m,inside.map(p=>[p,ridgeLow]),hook.map(p=>[p,hookLow]),innerNormal);
+      connect(m,hook.map(p=>[p,hookLow]),hook.map(p=>[p,hookHigh]),innerNormal);
+      connect(m,hook.map(p=>[p,hookHigh]),inside.map(p=>[p,ridgeHigh]),innerNormal);
+      connectSkirt(m,inside.map(p=>[p,ridgeHigh]),insideTop,innerNormal,new Set(),reliefTop);
+    } else connectSkirt(m,insideBottom,insideTop,innerNormal,reliefEdges,reliefTop,splitEdges,reliefTop);
+    ring(m,outer,inside,bottomZ,[0,0,-1],reliefEdges);
+    if(reliefEdges.size) addCornerReliefSlots(m,outer,inside,bottomZ,reliefTop,reliefEdges,reliefTop,[0,0,-1]);
+    if(pockets.length) surfaceWithPockets(m,inside,ceiling,[0,0,-1],pockets,magnetDepth);
+    else fan(m,inside,ceiling,[0,0,-1]);
+    if(s.stackRim) addStackGuideRim(m,s,top);
+    return m;
+  }
+  function cylinderMesh(cx,cy,z0,z1,r) {
+    const out=[],n=12,pts=Array.from({length:n},(_,i)=>[cx+r*Math.cos(i*2*Math.PI/n),cy+r*Math.sin(i*2*Math.PI/n)]);
+    for(let i=0;i<n;i++) {
+      const a=pts[i],b=pts[(i+1)%n];
+      triangle(out,[cx,cy,z1],[a[0],a[1],z1],[b[0],b[1],z1],[0,0,1]);
+      triangle(out,[cx,cy,z0],[a[0],a[1],z0],[b[0],b[1],z0],[0,0,-1]);
+      quad(out,[a[0],a[1],z0],[b[0],b[1],z0],[b[0],b[1],z1],[a[0],a[1],z1],[b[1]-a[1],a[0]-b[0],0]);
+    }
+    return out;
+  }
+  function magnetFaces(mode) {
+    if(!state.magnetic) return [];
+    const {L,W,H,t,b,magnetDiameter:d,magnetThickness:th}=state,top=H+b,rim=top,depth=th+.15,r=d/2;
+    const centers=magnetLayout(state).centers,mf=state.magnetFaces;
+    const faces=[];
+    const add=(z0,color,lid,insert)=>{
+      for(const [x,y] of centers) for(const tri of cylinderMesh(x,y,z0,z0+th,r)) faces.push({tri,color,lid,insert});
+    };
+    const zt=state.style==="slide"?slideGeometry(state).top+slideGeometry(state).gap+state.lt:rim+state.lt;
+    if(mode!=="lid") {
+      if(mf.trayTop) add(top-depth,[190,196,208],false,1);
+      if(mf.trayBottom) add(depth-th,[190,196,208],false,-1);
+    }
+    if(mode!=="tray") {
+      if(mf.lidBottom) add(rim+depth-th,[205,62,62],true,-1);
+      if(mf.lidTop) add(zt-depth,[205,62,62],true,1);
+    }
+    return faces;
+  }
+  function stl(tris,name) {
+    const buf=new ArrayBuffer(84+tris.length*50), view=new DataView(buf);
+    const header=new TextEncoder().encode(name.slice(0,80));
+    new Uint8Array(buf,0,header.length).set(header);
+    view.setUint32(80,tris.length,true);
+    let off=84;
+    for(const tri of tris) {
+      const [a,b,c]=tri, u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]], v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+      let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];
+      const len=Math.hypot(...n)||1; n=n.map(x=>x/len);
+      for(const value of [...n,...a,...b,...c]) { view.setFloat32(off,value,true); off+=4; }
+      view.setUint16(off,0,true); off+=2;
+    }
+    return new Blob([buf],{type:"model/stl"});
+  }
+  function printOrient(tris,flip) {
+    let out=tris;
+    if(flip) out=tris.map(tri=>tri.map(([x,y,z])=>[x,-y,-z]).reverse());
+    let minX=Infinity,minY=Infinity,minZ=Infinity;
+    for(const tri of out) for(const p of tri) {minX=Math.min(minX,p[0]);minY=Math.min(minY,p[1]);minZ=Math.min(minZ,p[2]);}
+    return out.map(tri=>tri.map(([x,y,z])=>[x-minX,y-minY,z-minZ]));
+  }
+  const shift=(tris,dx,dy)=>tris.map(tri=>tri.map(([x,y,z])=>[x+dx,y+dy,z]));
+  const extent=(tris,axis)=>tris.reduce((m,tri)=>Math.max(m,...tri.map(p=>p[axis])),0);
+  function save(tris,name,label) {
+    const url=URL.createObjectURL(stl(tris,name)), a=document.createElement("a");
+    a.href=url; a.download=`${name}.stl`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    $("status").textContent=`${label} STL downloaded (${tris.length} triangles).`;
+  }
+  function download(which) {
+    if(!read()) return;
+    const isLid=which==="lid";
+    const tris=isLid?printOrient(lidMesh(state),state.printFlip):trayMesh(state);
+    save(tris,`tray-${which}-${state.style}`,isLid?"Lid":"Tray");
+  }
+  function downloadPlate() {
+    if(!read()) return;
+    const tray=printOrient(trayMesh(state),false),lid=printOrient(lidMesh(state),state.printFlip);
+    save([...tray,...shift(lid,extent(tray,0)+10,0)],`tray-plate-${state.style}`,"Print plate");
+  }
+  function downloadTestPlate() {
+    if(!read()) return;
+    const clearances=[.1,.2,.3,.4,.5],all=[];
+    let y=0;
+    clearances.forEach((c,index)=>{
+      const test={...state,L:40,W:25,H:14,c,rows:1,columns:1,rowFracs:[],colFracs:[],magnetic:false,stackFeet:false,stackRim:false,feet:false,labelOn:false,
+        cornerSize:Math.min(state.cornerSize,8),dividerHeight:0,lt:state.lt};
+      if(test.style==="snap"&&test.f<test.lt+2) test.f=test.lt+2;
+      const tray=printOrient(trayMesh(test),false),lid=printOrient(lidMesh(test),state.printFlip);
+      const pips=[];
+      for(let k=0;k<=index;k++) pips.push(...cylinderMesh(tray.length?(test.L+2*test.t)/2+(k-index/2)*4:0,(test.W+2*test.t)/2,test.b-.1,test.b+.8,1.2));
+      const width=extent(tray,0),depth=Math.max(extent(tray,1),extent(lid,1));
+      all.push(...shift([...tray,...pips],0,y),...shift(lid,width+8,y));
+      y+=depth+8;
+    });
+    save(all,`clearance-test-${state.style}`,"Clearance test plate (0.1–0.5 mm, pips mark 1–5)");
+  }
+  function applySettings(data) {
+    for(const id of persistIds) {
+      if(!(id in data)||!$(id)) continue;
+      if($(id).type==="checkbox") $(id).checked=!!data[id]; else $(id).value=data[id];
+    }
+  }
+  function collectSettings() {
+    const data={};
+    for(const id of persistIds) data[id]=$(id).type==="checkbox"?$(id).checked:$(id).value;
+    return data;
+  }
+  function persist() {
+    try {localStorage.setItem("tray-generator-settings",JSON.stringify(collectSettings()));} catch(e) {}
+  }
+  function shareLink() {
+    const hash="#s="+btoa(unescape(encodeURIComponent(JSON.stringify(collectSettings()))));
+    const link=location.href.split("#")[0]+hash;
+    const done=()=>{$("status").textContent="Settings link copied.";};
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done,()=>{location.hash=hash;$("status").textContent="Link placed in the address bar.";});
+    else {location.hash=hash;$("status").textContent="Link placed in the address bar.";}
+  }
+  function loadSettings() {
+    try {
+      const match=location.hash.match(/^#s=(.+)$/);
+      if(match) applySettings(JSON.parse(decodeURIComponent(escape(atob(match[1])))));
+      else {const saved=localStorage.getItem("tray-generator-settings");if(saved) applySettings(JSON.parse(saved));}
+    } catch(e) {}
+  }
+  function animateAssembly(target) {
+    if(animation.frame) cancelAnimationFrame(animation.frame);
+    $("view-mode").value="assembled";
+    const startProgress=target===1?0:1;
+    animation.progress=startProgress;
+    $("assembly-progress").value=String(Math.round(startProgress*100));
+    const started=performance.now(),duration=1200;
+    function step(now) {
+      const t=clamp((now-started)/duration,0,1),eased=state.magnetic?(target===1?t*t*t:1-Math.pow(1-t,3)):t*t*(3-2*t);
+      animation.progress=startProgress+(target-startProgress)*eased;
+      $("assembly-progress").value=String(Math.round(animation.progress*100));
+      renderPreview();
+      if(t<1) animation.frame=requestAnimationFrame(step);
+      else {
+        animation.frame=0;
+        $("status").textContent=target===1?"Assembly animation complete.":"Disassembly animation complete.";
+      }
+    }
+    animation.frame=requestAnimationFrame(step);
+  }
+  function animateMagnets(target) {
+    if(magnet.frame) cancelAnimationFrame(magnet.frame);
+    $("view-mode").value="exploded";
+    const start=target===1?0:1,started=performance.now();
+    function step(now) {
+      const t=clamp((now-started)/1400,0,1),eased=t*t*(3-2*t);
+      magnet.progress=start+(target-start)*eased;
+      $("magnet-progress").value=String(Math.round(magnet.progress*100));
+      renderPreview();
+      magnet.frame=t<1?requestAnimationFrame(step):0;
+    }
+    magnet.frame=requestAnimationFrame(step);
+  }
+  $("magnet-insert").addEventListener("click",()=>animateMagnets(1));
+  $("magnet-remove").addEventListener("click",()=>animateMagnets(0));
+  $("magnet-progress").addEventListener("input",event=>{
+    if(magnet.frame) cancelAnimationFrame(magnet.frame);
+    magnet.frame=0;magnet.progress=Number(event.target.value)/100;
+    $("view-mode").value="exploded";
+    renderPreview();
+  });
+  inputIds.forEach(id=>$(id).addEventListener("input",update));
+  $("style").addEventListener("change",update);
+  $("view-mode").addEventListener("change",renderPreview);
+  $("animate-assemble").addEventListener("click",()=>animateAssembly(1));
+  $("animate-disassemble").addEventListener("click",()=>animateAssembly(0));
+  $("assembly-progress").addEventListener("input",event=>{
+    if(animation.frame) cancelAnimationFrame(animation.frame);
+    animation.frame=0;
+    animation.progress=Number(event.target.value)/100;
+    $("view-mode").value="assembled";
+    renderPreview();
+  });
+  $("base-download").addEventListener("click",()=>download("base"));
+  $("lid-download").addEventListener("click",()=>download("lid"));
+  $("plate-download").addEventListener("click",downloadPlate);
+  $("test-download").addEventListener("click",downloadTestPlate);
+  $("share-link").addEventListener("click",shareLink);
+  sectionIds.forEach(id=>$(id).addEventListener("input",renderPreview));
+  $("section-axis").addEventListener("change",renderPreview);
+  const canvas=$("preview-canvas");
+  let drag=null;
+  canvas.addEventListener("pointerdown",event=>{
+    drag={x:event.clientX,y:event.clientY};
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener("pointermove",event=>{
+    if(!drag) return;
+    view.azimuth+=(event.clientX-drag.x)*.01;
+    view.elevation=clamp(view.elevation+(event.clientY-drag.y)*.01,.12,Math.PI-.12);
+    drag={x:event.clientX,y:event.clientY};
+    renderPreview();
+  });
+  canvas.addEventListener("pointerup",()=>{drag=null;});
+  canvas.addEventListener("pointercancel",()=>{drag=null;});
+  canvas.addEventListener("wheel",event=>{
+    event.preventDefault();
+    view.zoom=clamp(view.zoom*(event.deltaY<0?1.1:.91),.55,2.2);
+    renderPreview();
+  },{passive:false});
+  $("reset-view").addEventListener("click",()=>{
+    view.azimuth=-.65; view.elevation=.72; view.zoom=1;
+    $("view-mode").value="assembled";
+    if(animation.frame) cancelAnimationFrame(animation.frame);
+    animation.frame=0;animation.progress=1;$("assembly-progress").value="100";
+    renderPreview();
+  });
+  $("flip-view").addEventListener("click",()=>{
+    view.elevation=view.elevation<Math.PI/2?Math.PI-.72:.72;
+    renderPreview();
+  });
+  const fitPresets={easy:.55,balanced:.3,firm:.15};
+  $("fit-preset").addEventListener("change",()=>{
+    const clearance=fitPresets[$("fit-preset").value];
+    if(clearance!==undefined) $("clearance").value=clearance;
+    update();
+  });
+  $("clearance").addEventListener("input",()=>{
+    const selected=Object.entries(fitPresets).find(([,value])=>Math.abs(value-Number($("clearance").value))<.001);
+    $("fit-preset").value=selected?selected[0]:"custom";
+    update();
+  });
+  window.addEventListener("resize",renderPreview);
+  loadSettings();
+  update();
+})();
+</script>
+</body>
+</html>
